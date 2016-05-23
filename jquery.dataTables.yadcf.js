@@ -4,7 +4,7 @@
 * Yet Another DataTables Column Filter - (yadcf)
 *
 * File:        jquery.dataTables.yadcf.js
-* Version:     0.8.9
+* Version:     0.9.0.beta.18 (grab latest stable from https://github.com/vedmack/yadcf/releases)
 *
 * Author:      Daniel Reznick
 * Info:        https://github.com/vedmack/yadcf
@@ -41,8 +41,9 @@
 				Required:			true (when filter_type is custom_func / multi_select_custom_func)
 				Type:				function
 				Default value:		undefined
-				Description:		should be pointing to a function with the following signature myCustomFilterFunction(filterVal, columnVal, rowValues) , where filterVal is the value from the select box and
-									columnVal is the value from the relevant row column, rowValues is an array that holds the values of the entire row, this function should return true if the row matches your condition and the row should be displayed) and false otherwise
+				Description:		should be pointing to a function with the following signature myCustomFilterFunction(filterVal, columnVal, rowValues, stateVal) , where `filterVal` is the value from the select box,
+									`columnVal` is the value from the relevant row column, `rowValues` is an array that holds the values of the entire row and `stateVal` which holds the current state of the table row DOM
+									, stateVal is perfect to handle situations in which you placing radiobuttons / checkbox inside table column. This function should return true if the row matches your condition and the row should be displayed) and false otherwise
 				Note:				When using multi_select_custom_func as filter_type filterVal will hold an array of selected values from the multi select element
 
 * data
@@ -121,6 +122,13 @@
 				Type:				String / Array of string in case of range_number filter (first entry is for the first input and the second entry is for the second input
 				Default value:		Select value
 				Description:		The label that will appear in the select menu filter when no value is selected from the filter
+
+* omit_default_label
+				Required:			false
+				Type:				boolean
+				Default value:		false
+				Description:		Prevent yadcf from adding "default_label" (Select value / Select values)
+				Note				Currently supported in select / multi_select / custom_func / multi_select_custom_func
 
 * filter_reset_button_text
 				Required:			false
@@ -255,6 +263,12 @@
 									table data after filtering) only, unlike the normal behaviour in which the options of the filters are from all the table data
 
 
+* filters_tr_index
+				Required:			false
+				Type:				integer
+				Default value:		undefined
+				Description:		Allow to control the index of the <tr> inside the thead of the table, e.g when one <tr> is used for headers/sort and
+									another <tr> is used for filters
 *
 *
 *
@@ -385,7 +399,15 @@ var yadcf = (function ($) {
 		reN = /[^0-9]/g,
 		selectElementCustomInitFunc,
 		selectElementCustomRefreshFunc,
-		selectElementCustomDestroyFunc;
+		selectElementCustomDestroyFunc,
+		placeholderLang = {
+			'select': 'Select value',
+			'select_multi': 'Select values',
+			'filter': 'Type to filter',
+			'range': ['From', 'To'],
+			'date': 'Select a date'
+		},
+		settingsMap = {};
 
 	//From ColReorder (SpryMedia Ltd (www.sprymedia.co.uk))
 	function getSettingsObjFromTable(dt) {
@@ -512,7 +534,8 @@ var yadcf = (function ($) {
 				style_class: '',
                 datepicker_type: 'jquery-ui',
 				range_data_type: 'single',
-				range_data_type_delim: '-'
+				range_data_type_delim: '-',
+				omit_default_label: false
 			},
 			adaptContainerCssClassImpl = function (dummy) { return ''; };
 
@@ -598,7 +621,25 @@ var yadcf = (function ($) {
 		return string.replace(new RegExp(escapeRegExp(find), 'g'), replace);
 	}
 
-	function generateTableSelectorJQFriendly(tmpStr) {
+	function getTableId(obj) {
+		var tableId;
+		if (obj.table !== undefined) {
+			tableId = obj.table().node().id;
+		} else {
+			tableId = getSettingsObjFromTable(obj).sTableId;
+		}
+		return tableId;
+	}
+
+	function generateTableSelectorJQFriendly2(obj) {
+		var tmpStr;
+		if (obj.oInstance !== undefined && obj.oInstance.selector !== undefined) {
+			tmpStr = obj.oInstance.selector;
+		} else if (obj.selector !== undefined) {
+			tmpStr = obj.selector;
+		} else {
+			tmpStr = obj.table().node().id;
+		}
 		tmpStr = replaceAll(tmpStr, ".", "-");
 		tmpStr = replaceAll(tmpStr, ' ', '');
 		return tmpStr.replace(":", "-").replace("(", "").replace(")", "").replace("#", "-");
@@ -611,6 +652,7 @@ var yadcf = (function ($) {
 		tmpStr = replaceAll(tmpStr, ",", "");
 		tmpStr = replaceAll(tmpStr, ".", "-");
 		tmpStr = replaceAll(tmpStr, "#", "-");
+		tmpStr = replaceAll(tmpStr, ' ', '');
 		return tmpStr;
 	}
 
@@ -663,6 +705,10 @@ var yadcf = (function ($) {
 	function yadcfMatchFilterString(table_arg, column_number, selected_value, filter_match_mode, multiple, exclude) {
 		var case_insensitive = yadcf.getOptions(table_arg.selector)[column_number].case_insensitive,
 			ret_val;
+
+		if (selected_value === '') {
+			return '';
+		}
 
 		table_arg.fnSettings().aoPreSearchCols[column_number].bSmart = false;
 		table_arg.fnSettings().aoPreSearchCols[column_number].bRegex = true;
@@ -993,7 +1039,7 @@ var yadcf = (function ($) {
 					val,
 					retVal = false,
 					table_selector_jq_friendly_local = table_selector_jq_friendly,
-					current_table_selector_jq_friendly = yadcf.generateTableSelectorJQFriendly(settingsDt.oInstance.selector),
+					current_table_selector_jq_friendly = yadcf.generateTableSelectorJQFriendly2(settingsDt),
 					ignore_char_local = ignore_char,
 					column_data_type,
 					html_data_type,
@@ -1125,7 +1171,7 @@ var yadcf = (function ($) {
 					columnVal,
 					retVal = false,
 					table_selector_jq_friendly_local = table_selector_jq_friendly,
-					current_table_selector_jq_friendly = yadcf.generateTableSelectorJQFriendly(settingsDt.oInstance.selector),
+					current_table_selector_jq_friendly = yadcf.generateTableSelectorJQFriendly2(settingsDt),
 					custom_func,
 					column_number_filter;
 
@@ -1139,7 +1185,7 @@ var yadcf = (function ($) {
 
 				custom_func = getOptions(settingsDt.oInstance.selector)[col_num].custom_func;
 
-				retVal = custom_func(filterVal, columnVal, aData);
+				retVal = custom_func(filterVal, columnVal, aData, stateVal);
 
 				return retVal;
 			}
@@ -1154,7 +1200,7 @@ var yadcf = (function ($) {
 					val,
 					retVal = false,
 					table_selector_jq_friendly_local = table_selector_jq_friendly,
-					current_table_selector_jq_friendly = yadcf.generateTableSelectorJQFriendly(settingsDt.oInstance.selector),
+					current_table_selector_jq_friendly = yadcf.generateTableSelectorJQFriendly2(settingsDt),
 					column_data_type,
 					html_data_type,
 					i,
@@ -1307,7 +1353,7 @@ var yadcf = (function ($) {
 		filter_selector_string = filter_selector_string + " div.yadcf-filter-wrapper";
 		filter_selector_string_tmp = filter_selector_string;
 
-		$(filter_selector_string).append("<div id=\"yadcf-filter-wrapper-inner-" + table_selector_jq_friendly + "-" + column_number + "\" class=\"yadcf-filter-wrapper-inner\"></div>");
+		$(filter_selector_string).append("<div id=\"yadcf-filter-wrapper-inner-" + table_selector_jq_friendly + "-" + column_number + "\" class=\"yadcf-filter-wrapper-inner" + " -" + table_selector_jq_friendly + "-" + column_number + "\"></div>");
 		filter_selector_string = filter_selector_string + " div.yadcf-filter-wrapper-inner";
 
 		filterActionStr = 'onkeyup="yadcf.rangeNumberKeyUP(\'' + table_selector_jq_friendly + '\',event);"';
@@ -1559,20 +1605,8 @@ var yadcf = (function ($) {
 			datepickerObj.useCurrent = false;
             $fromInput.datetimepicker(datepickerObj);
             $toInput.datetimepicker(datepickerObj);
-			if (datepickerObj.format.toLowerCase() !== 'hh:mm') {
-				$fromInput.on("dp.change", function (e) {
-					$toInput.data("DateTimePicker").minDate(e.date);
-				});
-				$toInput.on("dp.change", function (e) {
-					$fromInput.data("DateTimePicker").maxDate(e.date);
-				});
-				if (columnObj.externally_triggered !== true) {
-					$fromInput.add($toInput).on('dp.change', dateSelect);
-				}
-			} else {
-				if (columnObj.externally_triggered !== true) {
-					$fromInput.add($toInput).on('dp.hide', dateSelect);
-				}
+			if (columnObj.externally_triggered !== true) {
+				$fromInput.add($toInput).on('dp.hide', dateSelect);
 			}
         } else if (columnObj.datepicker_type === 'bootstrap-datepicker') {
 			//$fromInput.datepicker({});
@@ -1672,17 +1706,30 @@ var yadcf = (function ($) {
 	}
 
 	function rangeNumberSldierDrawTips(min_tip_val, max_tip_val, min_tip_id, max_tip_id, table_selector_jq_friendly, column_number) {
-		var first_handle = $("#yadcf-filter-wrapper-inner-" + table_selector_jq_friendly + "-" + column_number + " .ui-slider-handle:first"),
-			last_handle = $("#yadcf-filter-wrapper-inner-" + table_selector_jq_friendly + "-" + column_number + " .ui-slider-handle:last"),
+		var first_handle = $(".yadcf-number-slider-filter-wrapper-inner.-" + table_selector_jq_friendly + "-" + column_number),// + " .ui-slider-handle:first"),
+			last_handle = $(".yadcf-number-slider-filter-wrapper-inner.-" + table_selector_jq_friendly + "-" + column_number),// + " .ui-slider-handle:last"),
 			min_tip_inner,
 			max_tip_inner;
 
 		min_tip_inner = "<div id=\"" + min_tip_id + "\" class=\"yadcf-filter-range-number-slider-min-tip-inner\">" + min_tip_val + "</div>";
 		max_tip_inner = "<div id=\"" + max_tip_id + "\" class=\"yadcf-filter-range-number-slider-max-tip-inner\">" + max_tip_val + "</div>";
 
-		$(first_handle).addClass("yadcf-filter-range-number-slider-min-tip").html(min_tip_inner);
-		$(last_handle).addClass("yadcf-filter-range-number-slider-max-tip").html(max_tip_inner);
+		if (first_handle.length === 1) {
+			first_handle = $(".yadcf-number-slider-filter-wrapper-inner.-" + table_selector_jq_friendly + "-" + column_number + " .ui-slider-handle:first");
+			$(first_handle).addClass("yadcf-filter-range-number-slider-min-tip").html(min_tip_inner);
+
+			last_handle = $(".yadcf-number-slider-filter-wrapper-inner.-" + table_selector_jq_friendly + "-" + column_number + " .ui-slider-handle:last");
+			$(last_handle).addClass("yadcf-filter-range-number-slider-max-tip").html(max_tip_inner);
+		} else {
+			//migth happen when scrollX is used or when filter row is being duplicated by DT
+			$($(first_handle)[0]).find('.ui-slider-handle:first').addClass("yadcf-filter-range-number-slider-min-tip").html(min_tip_inner);
+			$($(last_handle)[0]).find('.ui-slider-handle:last').addClass("yadcf-filter-range-number-slider-max-tip").html(max_tip_inner);
+
+			$($(first_handle)[1]).find('.ui-slider-handle:first').addClass("yadcf-filter-range-number-slider-min-tip").html(min_tip_inner);
+			$($(last_handle)[1]).find('.ui-slider-handle:last').addClass("yadcf-filter-range-number-slider-max-tip").html(max_tip_inner);
+		}
 	}
+
 
 	function rangeNumberSliderChange(table_selector_jq_friendly, event, ui) {
 		event = eventTargetFixUp(event);
@@ -1780,25 +1827,37 @@ var yadcf = (function ($) {
 			sliderMaxMin = {
 				min: min_val,
 				max: max_val
-			};
+			},
+			settingsDt,
+			currSliderMin = $("#" + sliderId).slider("option", "min"),
+			currSliderMax = $("#" + sliderId).slider("option", "max"),
+			redrawTable;
 
 		filter_wrapper_id = "yadcf-filter-wrapper-" + table_selector_jq_friendly + "-" + column_number;
 
-		if ($("#" + filter_wrapper_id).length > 0) {
+		if ($("#" + filter_wrapper_id).length > 0 && (currSliderMin === min_val && currSliderMax === max_val)) {
 			return;
 		}
 
 		$.fn.dataTableExt.iApiIndex = oTablesIndex[table_selector_jq_friendly];
 		oTable = oTables[table_selector_jq_friendly];
+		settingsDt = settingsMap[generateTableSelectorJQFriendly2(oTable)];
+
+		if ($("#" + filter_wrapper_id).length > 0) {
+			$("#" + sliderId).slider("destroy");
+			$("#" + filter_wrapper_id).remove();
+			redrawTable = true;
+		}
+
 		columnObj = getOptions(oTable.selector)[column_number];
 
-		if (oTable.fnSettings().oFeatures.bStateSave === true && oTable.fnSettings().oLoadedState) {
-			if (oTable.fnSettings().oLoadedState.yadcfState && oTable.fnSettings().oLoadedState.yadcfState[table_selector_jq_friendly] && oTable.fnSettings().oLoadedState.yadcfState[table_selector_jq_friendly][column_number]) {
-				if (min_val !== oTable.fnSettings().oLoadedState.yadcfState[table_selector_jq_friendly][column_number].from) {
-					min_state_val = oTable.fnSettings().oLoadedState.yadcfState[table_selector_jq_friendly][column_number].from;
+		if (settingsDt.oFeatures.bStateSave === true && settingsDt.oLoadedState) {
+			if (settingsDt.oLoadedState.yadcfState && settingsDt.oLoadedState.yadcfState[table_selector_jq_friendly] && settingsDt.oLoadedState.yadcfState[table_selector_jq_friendly][column_number]) {
+				if (min_val !== settingsDt.oLoadedState.yadcfState[table_selector_jq_friendly][column_number].from) {
+					min_state_val = settingsDt.oLoadedState.yadcfState[table_selector_jq_friendly][column_number].from;
 				}
-				if (max_val !== oTable.fnSettings().oLoadedState.yadcfState[table_selector_jq_friendly][column_number].to) {
-					max_state_val = oTable.fnSettings().oLoadedState.yadcfState[table_selector_jq_friendly][column_number].to;
+				if (max_val !== settingsDt.oLoadedState.yadcfState[table_selector_jq_friendly][column_number].to) {
+					max_state_val = settingsDt.oLoadedState.yadcfState[table_selector_jq_friendly][column_number].to;
 				}
 			}
 		}
@@ -1810,7 +1869,7 @@ var yadcf = (function ($) {
 			filter_selector_string = filter_selector_string + " div.yadcf-filter-wrapper";
 			filter_selector_string_tmp = filter_selector_string;
 
-			$(filter_selector_string).append("<div id=\"yadcf-filter-wrapper-inner-" + table_selector_jq_friendly + "-" + column_number + "\" class=\"yadcf-number-slider-filter-wrapper-inner\"></div>");
+			$(filter_selector_string).append("<div id=\"yadcf-filter-wrapper-inner-" + table_selector_jq_friendly + "-" + column_number + "\" class=\"yadcf-number-slider-filter-wrapper-inner" + " -" + table_selector_jq_friendly + "-" + column_number + "\"></div>");
 			filter_selector_string = filter_selector_string + " div.yadcf-number-slider-filter-wrapper-inner";
 
 			$(filter_selector_string).append("<div id=\"" + sliderId + "\" class=\"yadcf-filter-range-number-slider\"></div>");
@@ -1865,23 +1924,26 @@ var yadcf = (function ($) {
 
 		$.fn.dataTableExt.iApiIndex = oTablesIndex[table_selector_jq_friendly];
 		oTable = oTables[table_selector_jq_friendly];
-		if (oTable.fnSettings().oFeatures.bStateSave === true && oTable.fnSettings().oLoadedState) {
-			if (oTable.fnSettings().oLoadedState.yadcfState && oTable.fnSettings().oLoadedState.yadcfState[table_selector_jq_friendly] && oTable.fnSettings().oLoadedState.yadcfState[table_selector_jq_friendly][column_number]) {
-				if (isFinite(min_val) && min_val !== oTable.fnSettings().oLoadedState.yadcfState[table_selector_jq_friendly][column_number].from) {
+		if (settingsDt.oFeatures.bStateSave === true && settingsDt.oLoadedState) {
+			if (settingsDt.oLoadedState.yadcfState && settingsDt.oLoadedState.yadcfState[table_selector_jq_friendly] && settingsDt.oLoadedState.yadcfState[table_selector_jq_friendly][column_number]) {
+				if (isFinite(min_val) && min_val !== settingsDt.oLoadedState.yadcfState[table_selector_jq_friendly][column_number].from) {
 					$($(filter_selector_string).find(".ui-slider-handle")[0]).addClass("inuse");
 				}
-				if (isFinite(max_val) && max_val !== oTable.fnSettings().oLoadedState.yadcfState[table_selector_jq_friendly][column_number].to) {
+				if (isFinite(max_val) && max_val !== settingsDt.oLoadedState.yadcfState[table_selector_jq_friendly][column_number].to) {
 					$($(filter_selector_string).find(".ui-slider-handle")[1]).addClass("inuse");
 				}
-				if ((isFinite(min_val) && isFinite(max_val)) && (min_val !== oTable.fnSettings().oLoadedState.yadcfState[table_selector_jq_friendly][column_number].from || max_val !== oTable.fnSettings().oLoadedState.yadcfState[table_selector_jq_friendly][column_number].to)) {
+				if ((isFinite(min_val) && isFinite(max_val)) && (min_val !== settingsDt.oLoadedState.yadcfState[table_selector_jq_friendly][column_number].from || max_val !== settingsDt.oLoadedState.yadcfState[table_selector_jq_friendly][column_number].to)) {
 					$($(filter_selector_string).find(".ui-slider-range")).addClass("inuse");
 				}
 			}
 		}
 		resetIApiIndex();
 
-		if (oTable.fnSettings().oFeatures.bServerSide !== true) {
+		if (settingsDt.oFeatures.bServerSide !== true) {
 			addRangeNumberAndSliderFilterCapability(table_selector_jq_friendly, min_tip_id, max_tip_id, column_number, ignore_char, sliderMaxMin);
+		}
+		if (redrawTable === true) {
+			oTable.fnDraw(false);
 		}
 	}
 
@@ -1901,7 +1963,7 @@ var yadcf = (function ($) {
 			table_arg = table_arg.settings()[0].oInstance;
 		}
 		tableOptions = getOptions(table_arg.selector);
-		table_selector_jq_friendly = yadcf.generateTableSelectorJQFriendly(table_arg.selector);
+		table_selector_jq_friendly = yadcf.generateTableSelectorJQFriendly2(table_arg);
 		settingsDt = getSettingsObjFromTable(table_arg);
 
 		for (columnObjKey in tableOptions) {
@@ -1964,7 +2026,8 @@ var yadcf = (function ($) {
 	}
 
 	function removeFilters(oTable, args, table_selector) {
-		$('.yadcf-filter-wrapper').remove();
+		var tableId = getTableId(oTable);
+		$('#' + tableId + ' .yadcf-filter-wrapper').remove();
 		if (yadcfVersionCheck('1.10')) {
 			$(document).off('draw.dt', oTable.selector);
 			$(document).off('xhr.dt', oTable.selector);
@@ -1978,10 +2041,25 @@ var yadcf = (function ($) {
 	}
 
 	function sortAlphaNum(a, b) {
-		var aA = a.replace(reA, ""),
-			bA = b.replace(reA, ""),
+		var aA,
+			bA,
 			aN,
 			bN;
+
+		if (typeof a === 'object' && typeof a.label === 'string') {
+			a = a.label;
+		}
+		if (typeof b === 'object' && typeof b.label === 'string') {
+			b = b.label;
+		}
+
+		if (typeof a === 'string') {
+			aA = a.replace(reA, '');
+		}
+		if (typeof b === 'string') {
+			bA = b.replace(reA, '');
+		}
+
 		if (aA === bA) {
 			aN = parseInt(a.replace(reN, ""), 10);
 			bN = parseInt(b.replace(reN, ""), 10);
@@ -2037,7 +2115,7 @@ var yadcf = (function ($) {
 		return data;
 	}
 
-	function parseTableColumn(pTable, columnObj, table_selector_jq_friendly) {
+	function parseTableColumn(pTable, columnObj, table_selector_jq_friendly, pSettings) {
 		var col_inner_elements,
 			col_inner_data,
 			j,
@@ -2049,7 +2127,11 @@ var yadcf = (function ($) {
 			settingsDt,
 			column_number_filter;
 
-		settingsDt = getSettingsObjFromTable(pTable);
+		if (pSettings !== undefined) {
+			settingsDt = pSettings;
+		} else {
+			settingsDt = getSettingsObjFromTable(pTable);
+		}
 
 		if (columnObj.cumulative_filtering !== true) {
 			data = settingsDt.aoData;
@@ -2145,26 +2227,30 @@ var yadcf = (function ($) {
 				}
 			} else if (columnObj.column_data_type === "rendered_html") {
 				col_inner_elements = data[j]._aFilterData[column_number_filter];
-				col_inner_elements = $(col_inner_elements);
-				if (col_inner_elements.length > 0) {
-					for (k = 0; k < col_inner_elements.length; k++) {
-						switch (columnObj.html_data_type) {
-						case "text":
-							col_inner_data = $(col_inner_elements[k]).text();
-							break;
-						case "value":
-							col_inner_data = $(col_inner_elements[k]).val();
-							break;
-						case "id":
-							col_inner_data = col_inner_elements[k].id;
-							break;
-						case "selector":
-							col_inner_data = $(col_inner_elements[k]).find(columnObj.html_data_selector).text();
-							break;
+				if (typeof col_inner_elements !== 'string') {
+					col_inner_elements = $(col_inner_elements);
+					if (col_inner_elements.length > 0) {
+						for (k = 0; k < col_inner_elements.length; k++) {
+							switch (columnObj.html_data_type) {
+							case "text":
+								col_inner_data = $(col_inner_elements[k]).text();
+								break;
+							case "value":
+								col_inner_data = $(col_inner_elements[k]).val();
+								break;
+							case "id":
+								col_inner_data = col_inner_elements[k].id;
+								break;
+							case "selector":
+								col_inner_data = $(col_inner_elements[k]).find(columnObj.html_data_selector).text();
+								break;
+							}
 						}
+					} else {
+						col_inner_data = col_inner_elements.selector;
 					}
 				} else {
-					col_inner_data = col_inner_elements.selector;
+					col_inner_data = col_inner_elements;
 				}
 				if ($.trim(col_inner_data) !== '' && !(col_filter_array.hasOwnProperty(col_inner_data))) {
 					col_filter_array[col_inner_data] = col_inner_data;
@@ -2176,7 +2262,7 @@ var yadcf = (function ($) {
 		return column_data;
 	}
 
-	function appendFilters(oTable, args, table_selector) {
+	function appendFilters(oTable, args, table_selector, pSettings) {
 
 		var i = 0,
 			$filter_selector,
@@ -2225,8 +2311,14 @@ var yadcf = (function ($) {
 			tableDT,
 			columnFilterVal;
 
-		settingsDt = getSettingsObjFromTable(oTable);
-		table_selector_jq_friendly = yadcf.generateTableSelectorJQFriendly(table_selector);
+		if (pSettings === undefined) {
+			settingsDt = getSettingsObjFromTable(oTable);
+		} else {
+			settingsDt = pSettings;
+		}
+		settingsMap[generateTableSelectorJQFriendly2(oTable)] = settingsDt;
+
+		table_selector_jq_friendly = yadcf.generateTableSelectorJQFriendly2(oTable);
 		tableDT = tablesDT[table_selector_jq_friendly];
 
 		initColReorder2(settingsDt, table_selector_jq_friendly);
@@ -2235,8 +2327,8 @@ var yadcf = (function ($) {
 		if (settingsDt.oScroll.sX !== '' || settingsDt.oScroll.sY !== '') {
 			table_selector = '.yadcf-datatables-table-' + table_selector_jq_friendly;
 		}
-		if (oTable._fnGetUniqueThs() !== undefined) {
-			unique_th = oTable._fnGetUniqueThs();
+		if (settingsDt.oApi._fnGetUniqueThs !== undefined) {
+			unique_th = settingsDt.oApi._fnGetUniqueThs(settingsDt);
 		}
 		for (columnObjKey in args) {
 			if (args.hasOwnProperty(columnObjKey)) {
@@ -2300,15 +2392,15 @@ var yadcf = (function ($) {
 
 				if (filter_default_label === undefined) {
 					if (columnObj.filter_type === "select" || columnObj.filter_type === 'custom_func') {
-						filter_default_label = "Select value";
+						filter_default_label = placeholderLang.select;
 					} else if (columnObj.filter_type === "multi_select" || columnObj.filter_type === 'multi_select_custom_func') {
-						filter_default_label = "Select values";
+						filter_default_label = placeholderLang.select_multi;
 					} else if (columnObj.filter_type === "auto_complete" || columnObj.filter_type === "text") {
-						filter_default_label = 'Type to filter';
+						filter_default_label = placeholderLang.filter;
 					} else if (columnObj.filter_type === "range_number" || columnObj.filter_type === "range_date") {
-						filter_default_label = ["from", "to"];
+						filter_default_label = placeholderLang.range;
 					} else if (columnObj.filter_type === "date") {
-						filter_default_label = "Select a date";
+						filter_default_label = placeholderLang.date;
 					}
 					columnObj.filter_default_label = filter_default_label;
 				}
@@ -2324,7 +2416,7 @@ var yadcf = (function ($) {
 				}
 				if (data === undefined || columnObj.append_data_to_table_data !== undefined) {
 					columnObj.col_filter_array = undefined;
-					column_data_temp = parseTableColumn(oTable, columnObj, table_selector_jq_friendly);
+					column_data_temp = parseTableColumn(oTable, columnObj, table_selector_jq_friendly, settingsDt);
 					if (columnObj.append_data_to_table_data !== 'before') {
 						column_data = column_data.concat(column_data_temp);
 					} else {
@@ -2365,7 +2457,11 @@ var yadcf = (function ($) {
 							filter_selector_string = table_selector + ' ' + filters_position + ' th:eq(' + $(unique_th[column_position]).index() + ')';
 						}
 					} else {
-						filter_selector_string = table_selector + ' ' + filters_position + ' tr:eq(' + $(unique_th[column_position]).parent().index() + ') th:eq(' + $(unique_th[column_position]).index() + ')';
+						if (columnObj.filters_tr_index === undefined) {
+							filter_selector_string = table_selector + ' ' + filters_position + ' tr:eq(' + $(unique_th[column_position]).parent().index() + ') th:eq(' + $(unique_th[column_position]).index() + ')';
+						} else {
+							filter_selector_string = table_selector + ' ' + filters_position + ' tr:eq(' + columnObj.filters_tr_index + ') th:eq(' + $(unique_th[column_position]).index() + ')';
+						}
 					}
 					$filter_selector = $(filter_selector_string).find(".yadcf-filter");
 				} else {
@@ -2383,17 +2479,19 @@ var yadcf = (function ($) {
 
 				if (columnObj.filter_type === "select" || columnObj.filter_type === 'custom_func' || columnObj.filter_type === "multi_select" || columnObj.filter_type === 'multi_select_custom_func') {
 					if (columnObj.data_as_is !== true) {
-						if (columnObj.filter_type === "select" || columnObj.filter_type === 'custom_func') {
-							options_tmp = "<option value=\"" + "-1" + "\">" + filter_default_label + "</option>";
+						if (columnObj.omit_default_label !== true) {
+							if (columnObj.filter_type === "select" || columnObj.filter_type === 'custom_func') {
+								options_tmp = "<option value=\"" + "-1" + "\">" + filter_default_label + "</option>";
 
-							if (columnObj.select_type === 'select2' && columnObj.select_type_options.placeholder !== undefined && columnObj.select_type_options.allowClear === true) {
-								options_tmp = "<option value=\"\"></option>";
-							}
-						} else if (columnObj.filter_type === "multi_select" || columnObj.filter_type === 'multi_select_custom_func') {
-							if (columnObj.select_type === undefined) {
-								options_tmp = "<option data-placeholder=\"true\" value=\"" + "-1" + "\">" + filter_default_label + "</option>";
-							} else {
-								options_tmp = "";
+								if (columnObj.select_type === 'select2' && columnObj.select_type_options.placeholder !== undefined && columnObj.select_type_options.allowClear === true) {
+									options_tmp = "<option value=\"\"></option>";
+								}
+							} else if (columnObj.filter_type === "multi_select" || columnObj.filter_type === 'multi_select_custom_func') {
+								if (columnObj.select_type === undefined) {
+									options_tmp = "<option data-placeholder=\"true\" value=\"" + "-1" + "\">" + filter_default_label + "</option>";
+								} else {
+									options_tmp = "";
+								}
 							}
 						}
 
@@ -2464,9 +2562,9 @@ var yadcf = (function ($) {
 							columnObj.filter_container_selector = "#" + filter_container_id;
 						}
 						if ($("#yadcf-filter-wrapper-" + columnObj.filter_container_selector).length === 0) {
-							$(columnObj.filter_container_selector).append("<div id=\"yadcf-filter-wrapper-" + generateTableSelectorJQFriendly(columnObj.filter_container_selector) + "\"></div>");
+							$(columnObj.filter_container_selector).append("<div id=\"yadcf-filter-wrapper-" + generateTableSelectorJQFriendlyNew(columnObj.filter_container_selector) + "\"></div>");
 						}
-						filter_selector_string = "#yadcf-filter-wrapper-" + generateTableSelectorJQFriendly(columnObj.filter_container_selector);
+						filter_selector_string = "#yadcf-filter-wrapper-" + generateTableSelectorJQFriendlyNew(columnObj.filter_container_selector);
 					}
 
 					if (columnObj.filter_type === "select" || columnObj.filter_type === 'custom_func') {
@@ -2673,7 +2771,7 @@ var yadcf = (function ($) {
 				}
 				if (columnObj.filter_type === "auto_complete") {
 					if (columnObj.filter_plugin_options !== undefined) {
-						if (columnObj.filter_plugin_options.source === undefined) {
+						if (columnObj.filter_plugin_options.source === undefined || columnObj.filter_plugin_options.source.length === 0) {
 							columnObj.filter_plugin_options.source = $(document).data("yadcf-filter-" + table_selector_jq_friendly + "-" + column_number);
 						}
 						columnObj.filter_plugin_options.select = autocompleteSelect;
@@ -2788,8 +2886,8 @@ var yadcf = (function ($) {
 			return;
 		}
 
-		$("#" + $(event.target).prev().find(".yadcf-filter-range-number-slider").attr("id")).slider("option", "yadcf-reset", true);
-		$("#" + $(event.target).prev().find(".yadcf-filter-range-number-slider").attr("id")).slider("option", "values", [min_val, max_val]);
+		$(event.target).prev().find(".yadcf-filter-range-number-slider").slider("option", "yadcf-reset", true);
+		$(event.target).prev().find(".yadcf-filter-range-number-slider").slider("option", "values", [min_val, max_val]);
 
 		$($(event.target).prev().find(".ui-slider-handle")[0]).attr("tabindex", -1).focus();
 
@@ -3259,7 +3357,7 @@ var yadcf = (function ($) {
 	function isDOMSource(tableVar) {
 		var settingsDt;
 		settingsDt = getSettingsObjFromTable(tableVar);
-		if (settingsDt.sAjaxSource == undefined && settingsDt.ajax == undefined) {
+		if (settingsDt.sAjaxSource == undefined && settingsDt.ajax == undefined && settingsDt.oFeatures.bServerSide !== true) {
 			return true;
 		}
 		return false;
@@ -3268,7 +3366,7 @@ var yadcf = (function ($) {
 	function scrollXYHandler(oTable, table_selector) {
 		var $tmpSelector,
 			filters_position = $(document).data(table_selector + "_filters_position"),
-			table_selector_jq_friendly = yadcf.generateTableSelectorJQFriendly(table_selector);
+			table_selector_jq_friendly = yadcf.generateTableSelectorJQFriendly2(oTable);
 
 		if (filters_position === 'thead') {
 			filters_position = '.dataTables_scrollHead';
@@ -3292,7 +3390,7 @@ var yadcf = (function ($) {
 
 	function initAndBindTable(oTable, table_selector, index, pTableDT) {
 
-		var table_selector_jq_friendly = yadcf.generateTableSelectorJQFriendly(table_selector),
+		var table_selector_jq_friendly = yadcf.generateTableSelectorJQFriendly2(oTable),
 			table_selector_tmp;
         oTables[table_selector_jq_friendly] = oTable;
 		tablesDT[table_selector_jq_friendly] = pTableDT;
@@ -3313,7 +3411,7 @@ var yadcf = (function ($) {
 					if (table_selector.indexOf(":eq") !== -1) {
 						table_selector_tmp = table_selector.substring(0, table_selector.lastIndexOf(":eq"));
 					}
-					appendFilters(oTable, getOptions(table_selector_tmp), oTable.selector);
+					appendFilters(oTable, getOptions(table_selector_tmp), oTable.selector, settings);
 				});
 			}
         } else {
@@ -3322,7 +3420,7 @@ var yadcf = (function ($) {
 				$(document).off('xhr.dt', oTable.selector).on('xhr.dt', oTable.selector, function (e, settings, json) {
 					var col_num,
 						column_number_filter,
-						table_selector_jq_friendly = generateTableSelectorJQFriendly(oTable.selector);
+						table_selector_jq_friendly = generateTableSelectorJQFriendly2(oTable);
 					if (json == undefined) {
 						console.log('datatables xhr.dt event came back with null as data (nothing for yadcf to do with it).');
 						return;
@@ -3347,7 +3445,7 @@ var yadcf = (function ($) {
 		//events that affects both DOM and Ajax
 		if (yadcfVersionCheck('1.10')) {
 			$(document).off('draw.dt', oTable.selector).on('draw.dt', oTable.selector, function (event, settings) {
-				appendFilters(oTable, yadcf.getOptions(settings.oInstance.selector), settings.oInstance.selector);
+				appendFilters(oTable, yadcf.getOptions(settings.oInstance.selector), settings.oInstance.selector, settings);
 			});
 			$(document).off('column-visibility.dt', oTable.selector).on('column-visibility.dt', oTable.selector, function (e, settings, col_num, state) {
 				var obj = {},
@@ -3362,27 +3460,27 @@ var yadcf = (function ($) {
 					if (obj[col_num] !== undefined) {
 						obj[col_num].column_number = col_num;
 						if (obj[col_num] !== undefined) {
-							appendFilters(oTables[yadcf.generateTableSelectorJQFriendly(settings.oInstance.selector)],
+							appendFilters(oTables[yadcf.generateTableSelectorJQFriendly2(settings)],
 								obj,
-								settings.oInstance.selector);
+								settings.oInstance.selector, settings);
 						}
 					}
 				} else if (settings._oFixedColumns !== undefined) {
-					appendFilters(oTables[yadcf.generateTableSelectorJQFriendly(settings.oInstance.selector)],
+					appendFilters(oTables[yadcf.generateTableSelectorJQFriendly2(settings)],
 						columnsObj,
-						settings.oInstance.selector);
+						settings.oInstance.selector, settings);
 				}
 			});
 			$(document).off('column-reorder.dt', oTable.selector).on('column-reorder.dt', oTable.selector, function (e, settings, json) {
-				var table_selector_jq_friendly = generateTableSelectorJQFriendly(oTable.selector);
+				var table_selector_jq_friendly = generateTableSelectorJQFriendly2(oTable);
 				initColReorderFromEvent(table_selector_jq_friendly);
 			});
 			$(document).off('destroy.dt', oTable.selector).on('destroy.dt', oTable.selector, function (event, ui) {
 				removeFilters(oTable, yadcf.getOptions(ui.oInstance.selector), ui.oInstance.selector);
 			});
 		} else {
-			$(document).off('draw', oTable.selector).on('draw', oTable.selector, function (event, ui) {
-				appendFilters(oTable, yadcf.getOptions(ui.oInstance.selector), ui.oInstance.selector);
+			$(document).off('draw', oTable.selector).on('draw', oTable.selector, function (event, settings) {
+				appendFilters(oTable, yadcf.getOptions(settings.oInstance.selector), settings.oInstance.selector, settings);
 			});
 			$(document).off('destroy', oTable.selector).on('destroy', oTable.selector, function (event, ui) {
 				removeFilters(oTable, yadcf.getOptions(ui.oInstance.selector), ui.oInstance.selector);
@@ -3436,6 +3534,15 @@ var yadcf = (function ($) {
 		} else {
 			params.filters_position = 'tfoot';
 		}
+		if (params.language !== undefined) {
+			for (tmpParams in placeholderLang) {
+				if (placeholderLang.hasOwnProperty(tmpParams)) {
+					if (params.language[tmpParams] !== undefined) {
+						placeholderLang[tmpParams] = params.language[tmpParams];
+					}
+				}
+			}
+		}
 		$(document).data(this.selector + "_filters_position", params.filters_position);
 
 		if ($(this.selector).length === 1) {
@@ -3457,7 +3564,8 @@ var yadcf = (function ($) {
 		var instance = oTable.settings()[0].oInstance,
 			i = 0,
 			selector,
-			tmpParams;
+			tmpParams,
+			tableSelector = '#' + oTable.table().node().id;
 
 		if (params === undefined) {
 			params = {};
@@ -3472,6 +3580,15 @@ var yadcf = (function ($) {
 			params.filters_position = 'thead';
 		} else {
 			params.filters_position = 'tfoot';
+		}
+		if (params.language !== undefined) {
+			for (tmpParams in placeholderLang) {
+				if (placeholderLang.hasOwnProperty(tmpParams)) {
+					if (params.language[tmpParams] !== undefined) {
+						placeholderLang[tmpParams] = params.language[tmpParams];
+					}
+				}
+			}
 		}
 		$(document).data(instance.selector + "_filters_position", params.filters_position);
 
@@ -3569,7 +3686,7 @@ var yadcf = (function ($) {
 							columnsTmpArr = filterOptions.column_number;
 							for (column_number_index = 0; column_number_index < columnsTmpArr.length; column_number_index++) {
 								filterOptions.column_number = columnsTmpArr[column_number_index];
-								filterOptions.data = filterOptions.data.concat(parseTableColumn(tableTmp, filterOptions, table_selector_jq_friendly));
+								filterOptions.data = filterOptions.data.concat(parseTableColumn(tableTmp, filterOptions, table_selector_jq_friendly, ui));
 							}
 							filterOptions.column_number = columnsTmpArr;
 							filterOptions.data = sortColumnData(filterOptions.data, filterOptions);
@@ -3746,7 +3863,7 @@ var yadcf = (function ($) {
 		if (table_arg.settings !== undefined) {
 			table_arg = table_arg.settings()[0].oInstance;
 		}
-		table_selector_jq_friendly = yadcf.generateTableSelectorJQFriendly(table_arg.selector);
+		table_selector_jq_friendly = yadcf.generateTableSelectorJQFriendly2(table_arg);
 		if (isDOMSource(table_arg) || ajaxSource === true) {
 			for (j = 0; j < col_filter_arr.length; j++) {
 				column_number = col_filter_arr[j][0];
@@ -3915,7 +4032,7 @@ var yadcf = (function ($) {
 		}
 
 		optionsObj = getOptions(table_arg.selector)[column_number];
-		table_selector_jq_friendly = yadcf.generateTableSelectorJQFriendly(table_arg.selector);
+		table_selector_jq_friendly = yadcf.generateTableSelectorJQFriendly2(table_arg);
 
 		$filterElement = $('#yadcf-filter-' + table_selector_jq_friendly + '-' + column_number);
 		switch (optionsObj.filter_type) {
@@ -4032,7 +4149,7 @@ var yadcf = (function ($) {
 			table_arg = table_arg.settings()[0].oInstance;
 		}
 		tableOptions = getOptions(table_arg.selector);
-		table_selector_jq_friendly = yadcf.generateTableSelectorJQFriendly(table_arg.selector);
+		table_selector_jq_friendly = yadcf.generateTableSelectorJQFriendly2(table_arg);
 		settingsDt = getSettingsObjFromTable(table_arg);
 
 		for (columnObjKey in tableOptions) {
@@ -4174,7 +4291,6 @@ var yadcf = (function ($) {
 		rangeClear : rangeClear,
 		rangeNumberSliderClear : rangeNumberSliderClear,
 		stopPropagation : stopPropagation,
-		generateTableSelectorJQFriendly : generateTableSelectorJQFriendly,
 		exFilterColumn : exFilterColumn,
 		exGetColumnFilterVal : exGetColumnFilterVal,
 		exResetAllFilters: exResetAllFilters,
@@ -4192,7 +4308,8 @@ var yadcf = (function ($) {
 		exFilterExternallyTriggered: exFilterExternallyTriggered,
 		exResetFilters: exResetFilters,
 		initSelectPluginCustomTriggers: initSelectPluginCustomTriggers,
-		preventDefaultForEnter: preventDefaultForEnter
+		preventDefaultForEnter: preventDefaultForEnter,
+		generateTableSelectorJQFriendly2: generateTableSelectorJQFriendly2
     };
 
 }(jQuery));
