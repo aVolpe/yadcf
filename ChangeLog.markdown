@@ -1,7 +1,19 @@
-# Yet Another DataTables Column Filter (Yadcf) Change-log
+# Yet Another DataTables Column Filter (yadcf) Change-log
+
+## 0.9.0 still in beta (grab latest stable from https://github.com/vedmack/yadcf/releases)
+
+* Fixed autocomplete with dt in ajax source https://github.com/vedmack/yadcf/issues/282
+* New option, omit_default_label - Prevent yadcf from adding "default_label" (Select value / Select values)
+* Fixed destroy for multiple tables https://github.com/vedmack/yadcf/issues/293
+* Allow selecting date and time (without closing filter) in date filtering https://github.com/vedmack/yadcf/issues/296
+* Added global property - filters_tr_index: Allow to control the index of the <tr> inside the thead of the table, e.g when one <tr> is used for headers/sort and another <tr> is used for filters https://github.com/vedmack/yadcf/issues/297
+* Some of additional closed issues https://github.com/vedmack/yadcf/issues/295 / https://github.com/vedmack/yadcf/issues/308 / https://github.com/vedmack/yadcf/issues/314
+	
+
 
 ## 0.8.9
 
+* Cumulative filtering - filter values are being populated from the filtered rows (remaining table data after filtering) https://github.com/vedmack/yadcf/issues/196
 * Time (single / range) filtering is now possible (hh:mm / HH:mm when using datepicker_type: 'bootstrap-datetimepicker') https://github.com/vedmack/yadcf/issues/168
 * Added initSelectPluginCustomTriggers - Allows to set any select jquery plugin initialize and refresh functions.(PR by gauravjhs)
 * Fixed auto complete filter
