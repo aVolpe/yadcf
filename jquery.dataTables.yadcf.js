@@ -535,6 +535,7 @@
 			var i = 0;
 			dot_refs = dot_refs.split(".");
 			for (i = 0; i < dot_refs.length; i++) {
+				if (!tmpObj) return tmpObj;
 				tmpObj = tmpObj[dot_refs[i]];
 			}
 			return tmpObj;
